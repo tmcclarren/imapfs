@@ -31,6 +31,7 @@
 #include <vmime/platforms/posix/posixHandler.hpp>
 
 #include "crash_handler.h"
+#include "stack_trace.h"
 #include "log.h"
 #include "fs_log.h"
 #include "imapfs.h"
@@ -47,7 +48,7 @@ IMAPFS* _fs = NULL;
 static void* imap_init(struct fuse_conn_info* conn)
 {
     (void) conn;
-    _fs = new IMAPFS("localhost", 2983, vector<string> {"user=tim", "authuser=tim", "ssl", "novalidate-cert"});
+    _fs = new IMAPFS("localhost", 2983, "tim", "v3rlYnu");
     return _fs;
 }
 
@@ -112,6 +113,16 @@ static int imap_fsync(const char* path, int isdatasync, struct fuse_file_info* f
     return _fs->fsync(path, isdatasync, fi);
 }
 
+static int imap_access(const char* path, int mask)
+{
+    return _fs->access(path, mask);
+}
+
+static int imap_unlink(const char* path)
+{
+	return _fs->unlink(path);
+}
+
 static int imap_mkdir(const char* path, mode_t mode)
 {
     (void) mode;
@@ -126,19 +137,26 @@ static int imap_rmdir(const char* path)
     return 0;
 }
 
-static int imap_access(const char* path, int mask)
-{
-    (void) mask;
-    LOGFN(LOG, INFO) << "access " << path;
-    return 0;
-}
-
 static int imap_release(const char* path, struct fuse_file_info* fi)
 {
     (void) path;
     (void) fi;
 
     LOGFN(LOG, INFO) << "release " << path;
+    return 0;
+}
+
+static int imap_chmod(const char* path, mode_t mode)
+{
+    (void) mode;
+
+    LOGFN(LOG, INFO) << "chmod " << path << " to " << mode;
+    return 0;
+}
+
+static int imap_chown(const char* path, uid_t uid, gid_t gid)
+{
+    LOGFN(LOG, INFO) << "chown " << path << " to " << uid << " " << gid;
     return 0;
 }
 
@@ -173,14 +191,14 @@ int main(int argc, char* argv[])
     imap_oper.truncate = imap_truncate;
     imap_oper.release = imap_release;
     imap_oper.fsync = imap_fsync;
+    imap_oper.chmod = imap_chmod;
+    imap_oper.chown = imap_chown;
+    imap_oper.unlink = imap_unlink;
 
 //    .readlink = imap_readlink,
 //    .symlink = imap_symlink,
 //    .link = imap_link,
-//    .unlink = imap_unlink,
 //    .rename = imap_rename,
-//    .chmod = imap_chmod,
-//    .chown = imap_chown,
 
 #ifdef HAVE_UTIMENSAT
 //    .utimens = imap_utimens,
@@ -229,155 +247,12 @@ int main(int argc, char* argv[])
         fuse_unmount("test", _fc);
     }
     catch (vmime::exception& e) {
-        LOG(LOG, CRIT) << "uncaught vmime exception " << e;
+        STACKFN(LOG, CRIT) << "uncaught vmime exception " << e;
     }
     return r;
 }
 
 #if 0
-// move into IMAPFS
-void mm_list(MAILSTREAM* ms, int delimiter, char* name, long attributes)
-{
-    (void) delimiter;
-    (void) attributes;
-
-    //LOGFN(LOG, INFO) << "name " << name << " attr " << attributes;
-    IMAPFS* fs = static_cast<IMAPFS*>(ms->sparep);
-    NETMBX mbx;
-    long ok = mail_valid_net_parse(name, &mbx);
-    if (!ok) {
-        LOGFN(LOG, INFO) << "error parsing";
-        return;
-    }
-    
-    NodeT* parent = &fs->_root;
-
-    string mailboxname(mbx.mailbox);
-    if (mailboxname == FS_MAILBOXROOTNAME) {
-        return;
-    }
-    
-    vector<string> elems = split(mailboxname, PATH_DELIMITER);   
-    mailboxname = elems.back(); elems.pop_back();
-    if (elems.size()) {
-        parent = find(elems.begin(), elems.end(), fs->_root);
-        if (!parent) {
-            LOGFN(LOG, CRIT) << "parent not found ";
-            return;
-        }
-    }
-    
-    //LOGFN(LOG, INFO) << "mailbox name " << leaf << " parent name " << parent->_name;
-
-    NodeT n(mailboxname);
-    n._stat.st_nlink = 2;
-    n._stat.st_mode = S_IFDIR | 0755;
-    n._stat.st_uid = fuse_get_context()->uid;
-    n._stat.st_gid = fuse_get_context()->gid;
-    n._flags |= (E_MAILBOX & attributes);
-    parent->_sub.insert(n);
-}
-
-void mm_lsub(MAILSTREAM* ms, int delimiter, char* name, long attributes)
-{
-    (void) ms;
-    (void) name;
-    (void) attributes;
-    LOGFN(LOG, INFO) << "lsub";
-}
-
-void mm_status(MAILSTREAM* ms, char* mailbox, MAILSTATUS* status)
-{
-    (void) ms;
-    (void) mailbox;
-    (void) status;
-    LOGFN(LOG, INFO) << "status";
-}
-
-void mm_log(char* string, long errflg)
-{
-    LOGFN(LOG, DEBUG) << "err " << to_string(errflg) << " " << string;
-}
-
-void mm_dlog(char* string)
-{
-    //LOGFN(LOG, DEBUG) << string;
-    //LOGFN(LOG, DEBUG) << string;
-}
-
-void mm_login(NETMBX* mb, char* user, char* pwd, long trial)
-{
-    (void) mb;
-    (void) trial;
-    LOGFN(LOG, INFO) << "login";
-    strcpy(user, "tim");
-    strcpy(pwd, "v3rlYnu");
-} 
-
-void mm_fatal(char* string)
-{
-    LOGFN(LOG, INFO) << "fatal " << string;
-}
-
-void mm_searched(MAILSTREAM* stream, unsigned long number)
-{
-    (void) stream;
-    (void) number;
-}
-
-void mm_exists(MAILSTREAM* stream, unsigned long number)
-{
-    (void) stream;
-    (void) number;
-}
-
-void mm_expunged(MAILSTREAM* stream, unsigned long number)
-{
-    (void) stream;
-    (void) number;
-}
-
-void mm_flags(MAILSTREAM* stream, unsigned long number)
-{
-    (void) stream;
-    (void) number;
-    
-}
-
-void mm_notify(MAILSTREAM* stream, char* string,long errflg)
-{
-    (void) stream;
-    (void) string;
-    (void) errflg;
-}
-
-void mm_critical(MAILSTREAM* stream)
-{
-    (void) stream;
-}
-
-void mm_nocritical(MAILSTREAM* stream)
-{
-    (void) stream;
-}
-
-long mm_diskerror(MAILSTREAM* stream, long errcode, long serious)
-{
-    (void) stream;
-    (void) errcode;
-    (void) serious;
-    return T;
-}
-
-/*
-void* mm_cache(MAILSTREAM* stream, unsigned long msgno, long op)
-{
-    (void) stream;
-    (void) msgno;
-    (void) op;
-}
-*/
-
 static int imap_readlink(const char* path, char* buf, size_t size)
 {
     int res;
@@ -390,17 +265,6 @@ static int imap_readlink(const char* path, char* buf, size_t size)
     return 0;
 }
 
-
-static int imap_unlink(const char* path)
-{
-	int res;
-
-	res = unlink(path);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
 
 
 static int imap_symlink(const char* from, const char* to)
@@ -433,30 +297,6 @@ static int imap_link(const char* from, const char* to)
     int res;
 
     res = link(from, to);
-    if (res == -1)
-        return -errno;
-
-    return 0;
-}
-
-static int imap_chmod(const char* path, mode_t mode, struct fuse_file_info* fi)
-{
-    (void) fi;
-    int res;
-
-    res = chmod(path, mode);
-    if (res == -1)
-        return -errno;
-
-    return 0;
-}
-
-static int imap_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_info* fi)
-{
-    (void) fi;
-    int res;
-
-    res = lchown(path, uid, gid);
     if (res == -1)
         return -errno;
 

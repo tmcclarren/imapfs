@@ -1,12 +1,12 @@
 CPP = cc
 
 #-I../uw-imap/imap-2007f/c-client
-CFLAGS = -Wall -g -O0 -fno-operator-names -std=c++11
+CFLAGS = -Wall -rdynamic -ggdb3 -Og -fno-operator-names -std=c++11 -I/usr/local/include
 
 #/home/tim/uw-imap/imap-2007f/c-client/c-client.a
-LIBS = -L/usr/local/lib -lstdc++ -lfuse -lssl -ldl -lm -lpam -lvmime
+LIBS = /usr/local/lib/libvmime.so -lstdc++ -lfuse -lssl -ldl -lm -lpam
 
-OBJS = imap.o imapfs.o stack_trace.o crash_handler.o fs_log.o
+OBJS = stack_trace.o crash_handler.o fs_log.o
 
 default: imap
 
@@ -19,6 +19,8 @@ clean:
 	rm -f *.o *~ core imap
 
 
-imap: $(OBJS)
-	$(CPP) $(OBJS) $(LIBS) -o imap
+imap: $(OBJS) imap.o imapfs.o
+	$(CPP) -rdynamic $(OBJS) imap.o imapfs.o $(LIBS) -o imap
 
+#passthrough: $(OBJS) passthrough.o
+#	$(CPP) -rdynamic $(OBJS) passthrough.o $(LIBS) -o passthrough

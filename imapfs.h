@@ -1,6 +1,7 @@
 #pragma once
 
 #include <climits>
+#include <memory>
 #include <string>
 #include <vector>
 #include <set>
@@ -10,35 +11,37 @@
 
 #include <vmime/vmime.hpp>
 
-//extern "C" {
-//#include <c-client/c-client.h>
-//}
-//#undef write
-//#undef min
-//#undef max
-
 std::ostream& operator << (std::ostream& os, const vmime::exception& e);
 
 class NodeT;
 
 extern char PATH_DELIMITER;
-extern const std::string FS_MAILBOXROOTNAME;
+extern const std::string FS_PREFIX;
 
 std::vector<std::string> split(const std::string& s, char delim);
 NodeT* find(std::vector<std::string>::iterator at, const std::vector<std::string>::const_iterator& end, const NodeT& in);
 
 enum NodeFlags {
+    E_HAVEFOLDERS = 1L << 0,
+    E_HAVEMESSAGES = 1L << 1,
     E_MAILBOX = 1L << 62,
     E_MESSAGE = 1L << 63
 };
 
+struct MessageContent {
+    std::shared_ptr<vmime::net::message> _message;
+    std::string _text;
+    std::string _buffer;
+};
+
 struct NodeT {
     NodeT(const std::string& name, unsigned long flags, unsigned long id, void* content):
-        _name(name), _flags(flags), _id(id), _content(content) {
+        _name(name), _flags(flags), _id(id), _content(content), _parent(NULL) {
         memset(&_stat, 0, sizeof(struct stat));
     }
     NodeT(const std::string& name, unsigned long flags, unsigned long id): NodeT(name, flags, id, NULL) { }
     NodeT(const std::string& name): NodeT(name, 0L, 0L) { }
+    NodeT(): NodeT("") { }
     
     // operator overload so we can put them in a set
     bool operator < (const NodeT& rhs) const { return (_name < rhs._name); }
@@ -52,29 +55,18 @@ struct NodeT {
     mutable unsigned long _flags;
     mutable unsigned long _id;
     mutable void* _content;
-    mutable std::set<NodeT> _sub;
     mutable struct stat _stat;
+    mutable std::set<NodeT> _sub;
+    NodeT* _parent;
+    std::shared_ptr<vmime::net::folder> _folder;
 };
-
-struct MessageContent {
-    MessageContent(): _text(NULL) { }
-    ~MessageContent() { }
-
-    //ENVELOPE* _envelope;
-    //BODY* _body;
-    char* _text;
-    std::string _buffer;
-};
-
 
 class IMAPFS {
 public:
-    IMAPFS(const std::string& host, unsigned short port, const std::vector<std::string>& args);
-    IMAPFS(const std::string& host, const std::vector<std::string>& args);
-    IMAPFS(const std::string& host);
-    IMAPFS();
+    IMAPFS(const std::string& host, unsigned short port, const std::string& authuser, const std::string& password);
+    IMAPFS(const std::string& host, const std::string& authuser, const std::string& password);
 
-    //MAILSTREAM* open(const std::string& mailbox);
+    std::shared_ptr<vmime::net::folder> openMailbox(const std::string& mailbox);
 
     int getattr(const std::string&, struct stat* stat);
     int statfs(const std::string& path, struct statvfs* stat);
@@ -85,18 +77,24 @@ public:
     int fallocate(const std::string& path, int mode, off_t offset, off_t length, struct fuse_file_info* fi);
     int truncate(const std::string& path, off_t size);
     int fsync(const std::string& path, int isdatasync, struct fuse_file_info* fi);
+    int access(const std::string& path, int mask);
+    int unlink(const std::string& path);
 
     NodeT* find(const std::string& path, bool message = true);
     
     const std::string& host() { return _host; }
     
     std::string canonical_host();
-    void rebuildRoot();
-
+    void rebuildSubfolders(NodeT* node, std::shared_ptr<vmime::net::folder> folder);
+    void rebuildMessages(NodeT* node, std::shared_ptr<vmime::net::folder> folder);
+    
     std::string _host;
     unsigned short _port;
-    std::vector<std::string> _args;
+    std::string _authuser;
+    std::string _password;
     std::string _mailbox;
-    //MAILSTREAM* _mstream;
     NodeT _root;
+    std::shared_ptr<vmime::net::folder> _current;
+    std::shared_ptr<vmime::net::session> _session;
+    std::shared_ptr<vmime::net::store> _store;
 };
