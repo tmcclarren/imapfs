@@ -1,7 +1,7 @@
 CPP = cc
 
 #-I../uw-imap/imap-2007f/c-client
-CFLAGS = -Wall -rdynamic -ggdb3 -Og -fno-operator-names -std=c++11 -I/usr/local/include
+CFLAGS = -Wall -rdynamic -ggdb3 -O0 -fno-operator-names -std=c++11 -I/usr/local/include
 
 #/home/tim/uw-imap/imap-2007f/c-client/c-client.a
 LIBS = /usr/local/lib/libvmime.so -lstdc++ -lfuse -lssl -ldl -lm -lpam

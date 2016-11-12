@@ -48,7 +48,14 @@ IMAPFS* _fs = NULL;
 static void* imap_init(struct fuse_conn_info* conn)
 {
     (void) conn;
-    _fs = new IMAPFS("localhost", 2983, "tim", "v3rlYnu");
+    IMAPFS* fs = new IMAPFS("localhost", 2983, "test", "carsnurfy9");
+    int r = fs->parseFilesystem();
+    if (r) {
+        LOG(LOG, CRIT) << "filesystem couldn't be parsed";
+        delete fs;
+        return NULL;
+    }
+    _fs = fs;
     return _fs;
 }
 
@@ -61,9 +68,7 @@ static int imap_getattr(const char* path, struct stat* status)
 static int imap_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset,
     struct fuse_file_info* fi)
 {
-    (void) fi;
     return _fs->readdir(path, buf, filler, offset);
-
 }
 
 static int imap_open(const char* path, struct fuse_file_info* fi)
@@ -92,8 +97,6 @@ static int imap_statfs(const char* path, struct statvfs* stbuf)
 
 static int imap_mknod(const char* path, mode_t mode, dev_t rdev)
 {
-    (void) rdev;
-
     return _fs->mknod(path, mode);
 }
 
@@ -125,31 +128,21 @@ static int imap_unlink(const char* path)
 
 static int imap_mkdir(const char* path, mode_t mode)
 {
-    (void) mode;
-
-    LOGFN(LOG, INFO) << "mkdir " << path;
-    return 0;
+    return _fs->mkdir(path, mode);
 }
 
 static int imap_rmdir(const char* path)
 {
-    LOGFN(LOG, INFO) << "rmdir " << path;
-    return 0;
+    return _fs->rmdir(path);
 }
 
 static int imap_release(const char* path, struct fuse_file_info* fi)
 {
-    (void) path;
-    (void) fi;
-
-    LOGFN(LOG, INFO) << "release " << path;
-    return 0;
+    return _fs->release(path, fi);
 }
 
 static int imap_chmod(const char* path, mode_t mode)
 {
-    (void) mode;
-
     LOGFN(LOG, INFO) << "chmod " << path << " to " << mode;
     return 0;
 }
@@ -158,6 +151,11 @@ static int imap_chown(const char* path, uid_t uid, gid_t gid)
 {
     LOGFN(LOG, INFO) << "chown " << path << " to " << uid << " " << gid;
     return 0;
+}
+
+static int imap_rename(const char* from, const char* to)
+{
+    return _fs->rename(from, to);
 }
 
 
@@ -179,26 +177,26 @@ int main(int argc, char* argv[])
     imap_oper.init = imap_init;
     imap_oper.getattr = imap_getattr;
     imap_oper.readdir = imap_readdir;
-    imap_oper.read = imap_read;
     imap_oper.open = imap_open;
-    imap_oper.statfs = imap_statfs;
+    imap_oper.read = imap_read;
     imap_oper.write = imap_write;
-    imap_oper.mkdir = imap_mkdir;
-    imap_oper.rmdir = imap_rmdir;
-    imap_oper.access = imap_access;
+    imap_oper.statfs = imap_statfs;
     imap_oper.mknod = imap_mknod;
     imap_oper.fallocate = imap_fallocate;
     imap_oper.truncate = imap_truncate;
-    imap_oper.release = imap_release;
     imap_oper.fsync = imap_fsync;
+    imap_oper.access = imap_access;
+    imap_oper.unlink = imap_unlink;
+    imap_oper.mkdir = imap_mkdir;
+    imap_oper.rmdir = imap_rmdir;
+    imap_oper.release = imap_release;
     imap_oper.chmod = imap_chmod;
     imap_oper.chown = imap_chown;
-    imap_oper.unlink = imap_unlink;
+    imap_oper.rename = imap_rename;
 
 //    .readlink = imap_readlink,
 //    .symlink = imap_symlink,
 //    .link = imap_link,
-//    .rename = imap_rename,
 
 #ifdef HAVE_UTIMENSAT
 //    .utimens = imap_utimens,
@@ -248,6 +246,8 @@ int main(int argc, char* argv[])
     }
     catch (vmime::exception& e) {
         STACKFN(LOG, CRIT) << "uncaught vmime exception " << e;
+        LOG(LOG, DEBUG) << "exiting";
+        fuse_unmount("test", _fc);
     }
     return r;
 }
@@ -272,20 +272,6 @@ static int imap_symlink(const char* from, const char* to)
     int res;
 
     res = symlink(from, to);
-    if (res == -1)
-        return -errno;
-
-    return 0;
-}
-
-static int imap_rename(const char* from, const char* to, unsigned int flags)
-{
-    int res;
-
-    if (flags)
-        return -EINVAL;
-
-    res = rename(from, to);
     if (res == -1)
         return -errno;
 
